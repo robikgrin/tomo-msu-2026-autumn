@@ -122,6 +122,39 @@ def cvx_method(M_dag, f, num_qubits=2):
         
     return rho.value
 
+def mle_method(M_dag, f, rho_0, num_qubits = 2,  mu = 0.5, eps=1e-6, max_iter=2000):
+    dim = 2**num_qubits
+
+    projectors = []
+    for i in range(len(f)):
+        P_i = (M_dag[i, :].conj()).reshape((dim, dim), order='F')
+        projectors.append(P_i)
+    
+    _, eigvecs = np.linalg.eigh(rho_0)
+    psi_0 = eigvecs[:, -1] # СВ с максимальным СЗ
+
+    def J(psi):
+        mat = np.zeros((dim,dim), dtype=complex)
+        for i in range(len(f)):
+            p = np.real(np.conj(psi) @ projectors[i] @ psi)
+            k = f[i]/9
+            mat +=  k/p * projectors[i]
+        return mat
+
+    psi_1 = mu * J(psi_0) @ psi_0 + (1-mu) * psi_0
+    psi_1 /= np.linalg.norm(psi_1)
+    infid = 1 - np.abs(np.conj(psi_1) @ psi_0)**2 
+    iteration = 1
+    while infid >= eps and iteration <= max_iter:
+        psi_0 = psi_1
+        psi_1 = mu * J(psi_0) @ psi_0 + (1-mu) * psi_0
+        psi_1 /= np.linalg.norm(psi_1)
+        infid = 1 - np.abs(np.conj(psi_1) @ psi_0)**2 
+        iteration += 1
+    print(f"MLE сошелся за {iteration} итераций")
+
+    return np.outer(psi_1, np.conj(psi_1))
+
 def plot_density_matrix(rho, num_qubits=2, title="Density Matrix"):
     """
     Визуализирует матрицу плотности в виде двух тепловых карт 
@@ -177,7 +210,7 @@ if __name__ == "__main__":
     true_rho = np.outer(psi, np.conj(psi))
 
     # матрицы M и f
-    M, f = get_freq_M(psi)
+    M, f = get_freq_M(psi, N=1000000)
     cond_number = np.linalg.cond(M)
     print(f'condition number of matrix M is {cond_number}')
 
@@ -198,6 +231,12 @@ if __name__ == "__main__":
     print(f'Trace = {np.trace(rho_opt)}')
     print(f'Is it hermitian? - {np.allclose(rho_opt, rho_opt.conj().T)}')
     print(f'Eigs: {np.linalg.eigvals(rho_opt)}')
+    print(f'Infid: {1 - np.trace(rho_opt @ true_rho)}\n')
 
-    
+    # MLE
+    rho_mle = mle_method(M, f, rho_opt)
+    print(f'Trace = {np.trace(rho_mle)}')
+    print(f'Is it hermitian? - {np.allclose(rho_mle, rho_mle.conj().T)}')
+    print(f'Eigs: {np.linalg.eigvals(rho_mle)}')
+    print(f'Infid: {1 - np.trace(rho_mle @ true_rho)}')
 
