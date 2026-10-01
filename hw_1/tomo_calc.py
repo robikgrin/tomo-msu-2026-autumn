@@ -124,6 +124,8 @@ def cvx_method(M_dag, f, num_qubits=2):
 
 def mle_method(M_dag, f, rho_0, num_qubits = 2,  mu = 0.5, eps=1e-6, max_iter=2000):
     dim = 2**num_qubits
+    f_flat = f.flatten()
+    num_bases = len(f_flat) // dim # количество базисов (та самая девятка)
 
     projectors = []
     for i in range(len(f)):
@@ -134,12 +136,9 @@ def mle_method(M_dag, f, rho_0, num_qubits = 2,  mu = 0.5, eps=1e-6, max_iter=20
     psi_0 = eigvecs[:, -1] # СВ с максимальным СЗ
 
     def J(psi):
-        mat = np.zeros((dim,dim), dtype=complex)
-        for i in range(len(f)):
-            p = np.real(np.conj(psi) @ projectors[i] @ psi)
-            k = f[i]/9
-            mat +=  k/p * projectors[i]
-        return mat
+        p = np.real(np.einsum('j, mjk, k -> m', np.conj(psi), projectors, psi))
+        weights = (f_flat/ num_bases) / np.maximum(p, 1e-15)
+        return np.einsum('m, mjk -> jk', weights, projectors)
 
     psi_1 = mu * J(psi_0) @ psi_0 + (1-mu) * psi_0
     psi_1 /= np.linalg.norm(psi_1)
@@ -210,7 +209,7 @@ if __name__ == "__main__":
     true_rho = np.outer(psi, np.conj(psi))
 
     # матрицы M и f
-    M, f = get_freq_M(psi, N=1000000)
+    M, f = get_freq_M(psi, N=1000)
     cond_number = np.linalg.cond(M)
     print(f'condition number of matrix M is {cond_number}')
 
